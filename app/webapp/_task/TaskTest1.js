@@ -41,7 +41,6 @@ var paths = {
         slice: './src/slice/**/*.png',
         js: './src/js/**/*.js',
         media: './src/media/**/*',
-        css: './src/css/**/*',
         less: './src/css/style-*.less',
         sass: './src/css/style-*.scss',
         html: ['./src/html/**/*.html', '!./src/html/_*/**.html'],
@@ -93,26 +92,9 @@ module.exports = function (gulp, config) {
     function compileLess() {
         return gulp.src(paths.src.less)
             .pipe(less({relativeUrls: true}))
-            //自动补全
-            .pipe(postcss(postcssOption))
-            //CSS 压缩
-            .pipe(minifyCSS({
-                safe: true,
-                reduceTransforms: false,
-                advanced: false,
-                compatibility: 'ie7',
-                keepSpecialComments: 0
-            }))
             .pipe(lazyImageCSS({imagePath: lazyDir}))
             .pipe(tmtsprite({margin: 4}))
-            //雪碧图压缩
-            .pipe(imagemin({
-                use: [pngquant()]
-            }))
-            .pipe(gulpif('*.png', gulp.dest(paths.dist.sprite), gulp.dest(paths.dist.css)))
-            .on('data', function () {
-            })
-            .on('end',reloadHandler);
+            .pipe(gulpif('*.png', gulp.dest(paths.dist.sprite), gulp.dest(paths.dist.css)));
     }
 
     //编译 sass
@@ -122,30 +104,19 @@ module.exports = function (gulp, config) {
             .on('error', sass.logError)
             .pipe(lazyImageCSS({imagePath: lazyDir}))
             .pipe(tmtsprite({margin: 4}))
-            //雪碧图压缩
-            .pipe(imagemin({
-                use: [pngquant()]
-            }))
-            .pipe(gulpif('*.png', gulp.dest(paths.dist.sprite), gulp.dest(paths.dist.css)))
-            .on('data', function () {
-            })
-            .on('end',miniCSS);
+            .pipe(gulpif('*.png', gulp.dest(paths.dist.sprite), gulp.dest(paths.dist.css)));
     }
 
     //自动补全
     function compileAutoprefixer() {
         return gulp.src('./dist/css/style-*.css')
             .pipe(postcss(postcssOption))
-            .pipe(gulp.dest('./dist/css/'))
-            .on('end',miniCSS);
+            .pipe(gulp.dest('./dist/css/'));
     }
 
     //CSS 压缩
     function miniCSS() {
         return gulp.src('./dist/css/style-*.css')
-            //自动补全
-            .pipe(postcss(postcssOption))
-            //CSS 压缩
             .pipe(minifyCSS({
                 safe: true,
                 reduceTransforms: false,
@@ -153,18 +124,7 @@ module.exports = function (gulp, config) {
                 compatibility: 'ie7',
                 keepSpecialComments: 0
             }))
-            .pipe(gulp.dest('./dist/css/'))
-            .on('end',reloadHandler);
-    }
-
-    //雪碧图压缩
-    function imageminSprite() {
-        return gulp.src('./dist/sprite/**/*')
-            .pipe(imagemin({
-                use: [pngquant()]
-            }))
-            .pipe(gulp.dest(paths.dist.sprite))
-            .on('end',reloadHandler);
+            .pipe(gulp.dest('./dist/css/'));
     }
 
     //图片压缩
@@ -173,13 +133,12 @@ module.exports = function (gulp, config) {
             .pipe(imagemin({
                 use: [pngquant()]
             }))
-            .pipe(gulp.dest(paths.dist.img))
-            .on('end',reloadHandler);
+            .pipe(gulp.dest(paths.dist.img));
     }
 
     //复制媒体文件
     function copyMedia() {
-        return gulp.src(paths.src.media, {base: paths.src.dir}).pipe(gulp.dest(paths.dist.dir)).on('end',reloadHandler);
+        return gulp.src(paths.src.media, {base: paths.src.dir}).pipe(gulp.dest(paths.dist.dir));
     }
 
     //js inject
@@ -187,6 +146,15 @@ module.exports = function (gulp, config) {
         return gulp.src('./src/html/index.html')
             .pipe(inject(gulp.src(paths.src.js,{read:false}),{relative:true}))
             .pipe(gulp.dest('./src/html'));
+    }
+
+    //雪碧图压缩
+    function imageminSprite() {
+        return gulp.src('./dist/sprite/**/*')
+            .pipe(imagemin({
+                use: [pngquant()]
+            }))
+            .pipe(gulp.dest(paths.dist.sprite));
     }
 
     //html 编译
@@ -205,8 +173,7 @@ module.exports = function (gulp, config) {
             .pipe(usemin({  //JS 合并压缩
                 jsmin: uglify()
             }))
-            .pipe(gulp.dest(paths.dist.html))
-            .on('end', reloadHandler);
+            .pipe(gulp.dest(paths.dist.html));
     }
 
     //webp 编译
@@ -224,7 +191,7 @@ module.exports = function (gulp, config) {
     function reversion(cb) {
         var revAll = new RevAll({
             fileNameManifest: 'manifest.json',
-            dontRenameFile: ['.html', '.php']
+            dontRenameFile: ['.html', '.php','manifest.json']
         });
 
         if (config['reversion']) {
@@ -240,66 +207,6 @@ module.exports = function (gulp, config) {
         } else {
             cb();
         }
-    }
-
-    function findChanged(cb) {
-
-        if (!config['supportChanged']) {
-            return gulp.src('./tmp/**/*', {base: paths.tmp.dir})
-                .pipe(gulp.dest(paths.dist.dir))
-                .on('end', function () {
-                    delTmp();
-                })
-        } else {
-            var diff = changed('./tmp');
-            var tmpSrc = [];
-
-            if (!_.isEmpty(diff)) {
-
-                //如果有reversion
-                if (config['reversion'] && config['reversion']['available']) {
-                    var keys = _.keys(diff);
-
-                    //先取得 reversion 生成的manifest.json
-                    var reversionManifest = require(path.resolve('./tmp/manifest.json'));
-
-                    if (reversionManifest) {
-                        reversionManifest = _.invert(reversionManifest);
-
-                        reversionManifest = _.pick(reversionManifest, keys);
-
-                        reversionManifest = _.invert(reversionManifest);
-
-                        _.forEach(reversionManifest, function (item, index) {
-                            tmpSrc.push('./tmp/' + item);
-                            console.log('[changed:] ' + util.colors.blue(index));
-                        });
-
-                        //将新的 manifest.json 保存
-                        fs.writeFileSync('./tmp/manifest.json', JSON.stringify(reversionManifest));
-
-                        tmpSrc.push('./tmp/manifest.json');
-                    }
-                } else {
-                    _.forEach(diff, function (item, index) {
-                        tmpSrc.push('./tmp/' + index);
-                        console.log('[changed:] ' + util.colors.blue(index));
-                    });
-                }
-
-                return gulp.src(tmpSrc, {base: paths.tmp.dir})
-                    .pipe(gulp.dest(paths.dist.dir))
-                    .on('end', function () {
-                        delTmp();
-                    })
-
-            } else {
-                console.log('Nothing changed!');
-                delTmp();
-                cb();
-            }
-        }
-
     }
 
     //启动 livereload
@@ -341,6 +248,31 @@ module.exports = function (gulp, config) {
                 }
                 break;
 
+            case 'slice':
+                if (type === 'removed') {
+                    var tmp = file.replace('src', 'dist');
+                    del([tmp]);
+                } else {
+                    imageminSprite();
+                }
+                break;
+
+            case 'js':
+                del(['./dist/js/*']);
+                if (type === 'removed') {
+                    var tmp = file.replace('src', 'dist');
+                    del([tmp]);
+                    myInject();
+                } else if (type === 'add') {
+                    myInject();
+                } else {
+                    // copyHandler('js', file);
+                    // uglifyJs();
+                    compileHtml();
+                }
+
+                break;
+
             case 'media':
                 if (type === 'removed') {
                     var tmp = file.replace('src', 'dist');
@@ -350,18 +282,21 @@ module.exports = function (gulp, config) {
                 }
                 break;
 
-            case 'js':
-                myInject();
-
-                break;
-
             case 'css':
+
                 var ext = path.extname(file);
 
-                if(ext === '.less'){
-                    compileLess();
-                }else{
-                    compileSass();
+                if (type === 'removed') {
+                    var tmp = file.replace('src', 'dist').replace(ext, '.css');
+                    del([tmp]);
+                } else {
+                    if(ext === '.less'){
+                        compileLess();
+                    }else{
+                        compileSass();
+                    }
+                    compileAutoprefixer();
+                    miniCSS();
                 }
 
                 break;
@@ -385,6 +320,10 @@ module.exports = function (gulp, config) {
                 break;
         }
 
+        setTimeout(function () {
+            reversion();
+        }, 500);
+
     };
 
     //监听文件
@@ -394,9 +333,8 @@ module.exports = function (gulp, config) {
                 paths.src.slice,
                 paths.src.js,
                 paths.src.media,
-                paths.src.css,
-                /*paths.src.less,
-                paths.src.sass,*/
+                paths.src.less,
+                paths.src.sass,
                 paths.src.html
             ],
             {ignored: /[\/\\]\./}
@@ -426,29 +364,27 @@ module.exports = function (gulp, config) {
     }
 
     //注册 build_dist 任务
-    gulp.task('test', gulp.series(
+    gulp.task('test1', gulp.series(
         delDist,
         compileLess,
         compileSass,
-        /*compileAutoprefixer,
-        miniCSS,*/
+        compileAutoprefixer,
+        miniCSS,
+        myInject,
         gulp.parallel(
-            // imageminSprite,
             imageminImg,
+            imageminSprite,
             copyMedia
             // uglifyJs
         ),
-        myInject,
         compileHtml,
-        // reversion,
+        reversion,
         supportWebp(),
-        // findChanged,
         gulp.parallel(
             watch,
             loadPlugin
         ),
         startServer
     ));
-
 };
 
